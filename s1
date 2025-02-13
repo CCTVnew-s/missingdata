@@ -83,13 +83,6 @@ getvwap:{[x2]
 };
 
 
-summaryQ: {[datetable;xd;] 
-    sd: exec last 20 # reverse asc date from datetable where date <= xd;
-    stas1: select sum Notion, count distinct sym, allsym: distinct sym by date, Account  from X2 where date within(sd;xd);
-    stats2: select trdds:count date, trdsym: avg sym, avg Notion, count distinct {() ,/ x} allsym  by Account from stas1;
-    :(() xkey update date:xd from stats2 lj acmap)};
-
-
 getlatestacmap:{[]
  ac1: ?[`Account`ClientName xcol hk (`.kodacSapphire.getTable; `UpdateClientInfo; .z.d - 1 ; 0t; 24t; `clientAsia;`columns`filters!(`ClientId`ClientName;`)); ();(enlist `Account)!enlist `Account;(enlist `clientName)!enlist (first;`ClientName)];
  ac2: ?[`Account`ClientName xcol hk (`.kodacSapphire.getTable; `UpdateClientInfo; .z.d - 4 ; 0t; 24t; `clientAsia;`columns`filters!(`ClientId`ClientName;`)); ();(enlist `Account)!enlist `Account;(enlist `clientName)!enlist (first;`ClientName)];
@@ -135,7 +128,8 @@ workinngond: {[d; path; justcache; cachefull]
 0N!"working on", string d;
 cnoutput:  getdata[d;`CNY`CNH;1b;`marketHK];
 $[ 0 = count cnoutput[2]; [0N!"no filling for this day, skip"; :()];];
-x2:getx2[getdata[cnoutput]];
+xx:getdata[cnoutput];
+x2:getx2[xx];
 vwap: getvwap[x2];
 acmap: getlatestacmap[];
 lastacmap: getlastcachedacmap[path];
@@ -147,7 +141,7 @@ if[cachefull;(`$raze ":", (string path) ,"fullobj",ssr[string d;".";""]) set cno
 if[justcache;system "sleep 1";:()];
 //
 Qt: getQtd[path;d];
-xn44: getextrasig1[cnoutput;vwap;Qt];
+xn44: getextrasig1[xx;vwap;Qt];
 newac: (select distinct Account from X2 where Account not in (() xkey lastacmap)`Account;
 newacn: select from acmap where Account in newac;
 tgtobj: (x2;vwap;Qt;xn44;newacn);
