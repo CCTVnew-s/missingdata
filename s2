@@ -1,0 +1,324 @@
+## pip install opencv-python==4.4.0.46
+## pip install pynput
+### Copy over
+### Process
+### know what's next
+
+
+### Think about the interfact flow
+import cv2
+import pynput
+from PIL.ImageStat import Global
+from pynput import keyboard
+from threading import Thread,Lock
+import cv2
+import os
+from qpython.qconnection import QConnection
+
+## Let's make this sample
+
+RUNNING = "prod"
+
+## Just Stop at each picture
+class PicPlayer:
+
+    def __init__(self):
+        self.displaystate = False
+        self.displayloc = Lock()
+        self.imgs = []
+        self.processed = 0
+
+    def displayimg(self,img):
+        self.displayloc.acquire()
+        self.displaystate = True
+        while True:
+            if img is None:
+                print("sth is none, we jump out")
+                #self.onlyloadpicagian()
+                img = self.imgs[self.processed]
+                if img is None:
+                    print("this page might be broken")
+            cv2.moveWindow("cool", 0, 0) 
+            try:
+
+                cv2.resizeWindow("cool",img.shape[1] + 40,img.shape[0]+40)
+                cv2.imshow("cool",img)
+                cv2.waitKey(100)
+                if not self.displaystate:
+                    cv2.destroyAllWindows()
+                    break
+            except Exception:
+                print("some execpetion, we restart showing")
+                cv2.destroyAllWindows()
+
+        self.displayloc.release()
+        ### one display one time
+
+    def displayready(self):
+        self.displaystate = False
+        x = "./playsource/ready.png"
+        imgcv2 = cv2.imread(x)
+        tr = Thread(target=self.displayimg,args=[imgcv2])
+        tr.start()
+
+    def displaynext(self):
+        print("displaying normal content (%d,%s\d)"%(self.processed,len(self.imgs)))
+        if self.iscurrentcomplete():
+            self.displaycomplete()
+        else:
+            self.displaystate = False
+            tr = Thread(target=self.displayimg, args=[self.imgs[self.processed]])
+            tr.start()
+            self.processed = self.processed + 1
+
+    def displayprevious(self):
+        self.processed = max(self.processed - 2, 0)
+        self.displaynext()
+
+
+    def displaycomplete(self):
+        self.displaystate = False
+        x =  "./playsource/complete.png"
+        imgcv2 = cv2.imread(x)
+
+        tr = Thread(target=self.displayimg,
+                    args=[imgcv2])
+        tr.start()
+
+    ### uploading time, well display sth, once finishi, display read
+    def upload(self, path):
+        self.lastpath = path
+        self.processed = 0
+        self.imgs = []
+        seqmap = dict()
+        for x in os.listdir(path):
+            i = int(x.split("-")[1].split(".")[0])
+            seqmap[i] = x
+        for i in range(len(seqmap)):
+            self.imgs.append(  cv2.imread(path + "/"+ seqmap[i]))
+            if self.imgs[-1] is None:
+                print("Exception ERROR!: %s is broken with %d"%(path,i))
+                return 0
+        print("%d pages loaded"%len(seqmap))
+        return 1
+
+    ### uploading time, well display sth, once finishi, display read
+    def upload(self, q):
+        self.q = q
+        self.processed = 0
+        self.imgs = []
+        n = q("getbytesn[]")
+        for i in range(n):
+            actplot = q("getbytesarrayI",i)
+            f = open("tmpx.png","wb")
+            f.write(bytearray(actplot))
+            f.close()
+            self.imgs.append(  cv2.imread("tmpx.png"))
+            os.remove("tmpx.png")
+            if self.imgs[-1] is None:
+                print("Exception ERROR!: q is broken with %d"%i)
+                return 0
+        print("%d pages loaded"%n)
+        return 1
+
+
+
+    def onlyloadpicagian(self):
+        q = self.q
+        self.imgs = []
+        n = q("getbytesn[]")
+        for i in range(n):
+            actplot = q("getbytesarrayI",i)
+            f = open("tmpx.png","wb")
+            f.write(bytearray(actplot))
+            self.imgs.append(  cv2.imread("tmpx.png"))
+            os.remove("tmpx.png")
+            if self.imgs[-1] is None:
+                print("Exception ERROR!: q is broken with %d"%i)
+                return 0
+        print("%d pages loaded"%n)
+
+    def iscurrentcomplete(self):
+        if self.processed >= len(self.imgs) :
+            return  True
+        else:
+            return False
+
+from enum import Enum
+
+class SignalInput(Enum):
+    Empty = 0
+    Ready = 1 ### State 1 to 2
+    Pause = 2 ### State 2 to 2
+    ### will see whether we need Previous
+    Next  = 3 ### State 2 to 2
+    Previous = 4
+    SaveComplete = 5 ### State 3 to 1
+
+class State(Enum):
+    CachingData = 0 ## This should be invisible to clients
+    ReadyToDisplay = 1
+    Playing = 2
+    Finish = 3
+
+import os
+
+class NuclearReactor:
+
+    def __init__(self,path,picplay,q):
+        self.avipath = path
+        self.processed = []
+        self.player = picplay
+        self.q = q
+        if self.checkneedtocache():
+            self.preparezipinbackgroud()
+        self.state = State.ReadyToDisplay
+        self.currentprocess = ""
+        self.continuouspause = 0
+
+
+    def checkneedtocache(self):
+        if not self.q is None:
+            return False
+        if len(os.listdir(self.avipath)) > len(self.processed):
+            return False
+        else:
+            return True
+    ### zips, download zips, translate to pictures and AVIs, copy AVIs to destination, open AVIs ~~~ so need to constantly copy AVI ~~~ amybe access from sever
+    def preparezipinbackgroud(self):
+            pass
+
+    def uploadforplayerorig(self):
+        self.processed.append(self.currentprocess)
+        for x in sorted(os.listdir(self.avipath)) :
+            if (not x in self.processed)  and ((True)):
+                print("upload for " + self.avipath + "/" + x)
+                rtnval = self.player.upload(self.avipath + "/" + x)
+                self.currentprocess = x
+                break
+        return rtnval
+
+    def uploadforplayer(self):
+        rtnval = self.player.upload(self.q)
+        return rtnval
+
+    def reloadforplayer(self):
+        self.player.upload(self.q)
+
+    def handlesignal(self, input):
+        if input == SignalInput.Empty:
+            pass
+        elif input == SignalInput.Ready:
+            if self.state == State.ReadyToDisplay:
+                self.state = State.Playing
+                self.player.displaynext()
+            else:
+                print("wrong signal, doing nothing")
+
+        elif input == SignalInput.Next:
+            self.continuouspause = 0
+            if self.state == State.Playing:
+                if self.player.iscurrentcomplete():
+                    self.state = State.Finish
+                    self.player.displaycomplete()
+                else:
+                    self.player.displaynext()
+            elif self.state == State.Finish:
+                    self.player.displaycomplete()
+            else:
+                print("wrong signal, doing nothing")
+
+        elif input == SignalInput.Pause:
+            if self.state == State.Playing:
+                print("waiting for image recover")
+                self.continuouspause = self.continuouspause + 1
+                if self.continuouspause > 10:
+                    print("sth wrong, let's reload and show previous")
+                    self.reloadforplayer()
+                    self.player.displaynext()
+                    self.continuouspause = 0
+
+            elif self.state == State.Finish:
+                    self.player.displaycomplete()
+                    if not self.q is None:
+                        exit()
+
+        elif input == SignalInput.SaveComplete:
+            if self.state == State.Finish:
+                if self.checkneedtocache():
+                    self.state = State.CachingData
+                    self.preparezipinbackgroud()
+                    self.state = State.ReadyToDisplay
+                    if self.uploadforplayer() == 0:
+                        self.uploadforplayer()
+                    self.player.displayready()
+                else:
+                    self.state = State.ReadyToDisplay
+                    self.uploadforplayer()
+                    self.player.displayready()
+            else:
+                print("wrong signal, doing nothing")
+        elif input == SignalInput.Previous:
+            if self.state == State.Playing:
+                print("need to go back a bit")
+                self.player.displayprevious()
+            elif self.state == State.Finish:
+                    self.player.displaycomplete()
+        else:
+            pass
+    ### key/signal translation
+    def getSignalInput(self,key):
+       try:
+        print( "this is recieived "+ key.char)
+        if key.char == "r":
+            return SignalInput.Ready
+        elif key.char == "n":
+            return SignalInput.Next
+        elif key.char == "p":
+            return SignalInput.Pause
+        elif key.char == "s":
+            return SignalInput.SaveComplete
+        elif key.char == "l":
+            return SignalInput.Previous
+        else:
+            return SignalInput.Empty
+       except Exception:
+           print("key excpetion")
+
+    def onkey(self,key):
+        pass
+
+    def releasekey(self,key):
+        signal = self.getSignalInput(key)
+        self.handlesignal(signal)
+
+
+    def run(self):
+        if self.q is None:
+            print(os.listdir(self.avipath))
+            print(len(os.listdir(self.avipath)))
+        self.uploadforplayer()
+        self.player.displayready()
+        while True:
+            with keyboard.Listener(
+                    on_press=lambda key: self.onkey(key),
+                    on_release=lambda key: self.releasekey(key)) as listener:
+                listener.join()
+            global exitnow
+            if exitnow:
+                break
+
+
+
+
+
+if __name__ == "__main__":
+    ### transfer store data
+    store = "C:\\ProgramData\\tmpplot"
+
+    exitnow = False
+    q = QConnection("192.168.0.102",8949)
+    q.open()
+    p = PicPlayer()
+    r = NuclearReactor(store,p,q)
+    r.run()
