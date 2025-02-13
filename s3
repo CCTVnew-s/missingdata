@@ -1,0 +1,145 @@
+2## pip install numpy;pip install  Pillow;  pip install pynput;pip install opencv-python==4.4.0.46
+import numpy as np
+import math
+from PIL import Image
+
+## New convention
+def converfiletobytesnumber(f,filename):
+    filetgt = open(f,"rb")
+    bytesn = list(filetgt.read())
+    filetgt.close()
+    l = len(bytesn)
+    d1 = l%256
+    l2 = int(l/256)
+    d2 = l2%256
+    l3 = int(l2/256)
+    d3 = l3%256
+    l4 = int(l3/256)
+    d4 = l4%256
+    return [ ord(x) for x in filename][:8] + [" "]*(8 - len(filename)) + [d4,d3,d2,d1] + bytesn
+
+
+PAGEOFFSET = 150 ## 150 pixel
+
+def getSquarePxlArraysWithVerify(dataarray,lx,ly,sqsize,edge,pagecolornum):
+    rtnArrayList = []
+    dataRecLength = dataarray.shape[1]
+    numRec = dataarray.shape[0]
+    numRecPerPage = int(lx*ly/dataRecLength) - 1;
+    numPages = int(np.ceil(numRec/(0.0+numRecPerPage)))
+    IdBlockNum = int(np.ceil(math.log(numPages)/math.log(2.0)))
+    for i in range(numPages):
+        # filling the data
+        emptypage = np.zeros((int(lx*ly),1))
+        numRecThisPage = numRecPerPage if i<(numPages-1) else numRec - i*numRecPerPage
+        emptypage[:numRecThisPage*dataRecLength] = dataarray[i*numRecPerPage: ((i+1)*numRecPerPage) if i<(numPages-1) else numRec].reshape(-1,1)
+        ## add verificaition
+        emptypage[-1] = np.uint8(emptypage.sum())
+
+        emptypage = emptypage.reshape((-1, lx))
+        curPage = emptypage
+        # sqsize and add egdes
+        sqCurPage = np.repeat(np.repeat(curPage,sqsize,axis=0).T,sqsize,axis=0).T
+        edgePage = np.zeros((sqCurPage.shape[0]+2*edge, sqCurPage.shape[1]+2*edge))
+        edgePage[edge:-edge,edge:-edge] =  sqCurPage
+        # add Page Id on last
+        PageId = [((i) & 2**x)/2**x for x in range(IdBlockNum)]
+        for j in range(len(PageId)):
+            if PageId[j] == 1:
+                edgePage[-sqsize:,-(j+1)*sqsize :edgePage.shape[1]-j*sqsize] = np.ones((sqsize,sqsize))*pagecolornum
+        edgePage = edgePage.astype(np.uint8)
+        rtnArrayList.append(edgePage)
+    return rtnArrayList
+
+def getPalette():
+    p = []
+    for i in range(7):
+        for j in range(7):
+            for k in range(7):
+                if len(p) == 256*3:
+                    return p
+                else:
+                    p.append(i*35)
+                    p.append(j*35)
+                    p.append(k*35)
+    return p
+
+def getGenrateImageFromData(imgData, palette):
+    img = Image.fromarray(imgData,mode="P")
+    img.putpalette(palette)
+    return img
+
+## RGB mode and YCrCb mode, usually it's 3 8bit as one pixel
+## imgData should be data with rage of 2**1,......, 2**4 !! and 2**6
+def getImageFromData(imgData,funcs,mode):
+    if funcs == None:
+        return getGenrateImageFromData(imgData,getPalette())
+    imgdatax0 = funcs[0](imgData)
+    imgdatax1 = funcs[1](imgData)
+    imgdatax2 = funcs[2](imgData)
+    img3dx = np.zeros(shape=(imgData.shape[0],imgData.shape[1],3),dtype=np.uint8)
+    img3dx[:,:,0] = imgdatax0
+    img3dx[:,:,1] = imgdatax1
+    img3dx[:,:,2] = imgdatax2
+    return  Image.fromarray(img3dx,mode=mode)
+
+
+
+def releaseDataPlotOnly(plotdatalist,filenameprefix,storefolder,funcs,mode,extension):
+    plotnum = 0
+    for plotdata in plotdatalist:
+        img = getImageFromData(plotdata, funcs, mode)
+        ## system depends
+        if sys.platform == "win32":
+            imgfile = storefolder+"\\"+filenameprefix+"-"+str(plotnum)+"."+extension
+        else:
+            imgfile = storefolder + "/" + filenameprefix + "-" + str(plotnum) + "." + extension
+        img.save(imgfile)
+        plotnum=plotnum+1
+
+def process256dataPlotonly(list256number,lx,ly,sqsize,edge,filenameprefix,storefolder,pagenumcolor,extension):
+    datas = np.array(list256number).reshape((-1,1))
+    print(len(datas))
+    processedbitdate = getSquarePxlArraysWithVerify(datas, lx, ly, sqsize, edge,pagenumcolor)
+    releaseDataPlotOnly(processedbitdate, filenameprefix, storefolder,None,None,extension)
+
+import os
+def packonezip(filepath,filenameextract, lx,ly,sqsize,edge, filenameprefix, storefolder, pagenumcolor, extension ):
+    filename = filenameextract(filepath)
+    os.mkdir(storefolder +"\\" + filename)
+    return process256dataPlotonly(converfiletobytesnumber(filepath,filename),lx,ly,sqsize,edge,filenameprefix,storefolder +"\\" + filename,pagenumcolor, extension)
+
+import shutil
+
+def packonezip2(filepath,filenameinfo, lx,ly,sqsize,edge, filenameprefix, storefolder, pagenumcolor, extension ):
+    rtn = process256dataPlotonly(converfiletobytesnumber(filepath,filenameinfo),lx,ly,sqsize,edge,filenameprefix,storefolder ,pagenumcolor, "png")
+    ## rename everything
+    fs = os.listdir(storefolder)
+    for f in fs:
+        if sys.platform == "win32":
+            fpath = storefolder + "\\" + f
+        else:
+            fpath = storefolder + "/" + f
+        shutil.move(fpath, fpath.replace("png",extension))
+
+
+# which target file to zip
+# what's the size to zip
+# extract name, our given name - 8 digits
+# store data, name and formats
+
+if __name__ == "__main__":
+    import os
+    import sys
+    targetfile = sys.argv[1]
+    lxly = sys.argv[2]
+    nameinfo = sys.argv[3]
+    storefolder = sys.argv[4]
+
+    lx = int(lxly.split("x")[0])
+    ly = int(lxly.split("x")[1])
+
+    rtn = packonezip2(targetfile, nameinfo, lx, ly, 4, 20, "sdfaslkfgsk8887zx", storefolder,
+                     255, "log")
+
+##  python .\testrun.py 20000101.zip  600x300 20000101 binarylog
