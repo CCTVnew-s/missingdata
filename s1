@@ -28,6 +28,46 @@ s23: hk (`.noms.getExecutions; d; 0t; d; 24t; `streams`filters`columns`tz!(`hprA
 :(s1x;s1y;s2x;count s1x;count s1y;count s2x; stratextra)]};
 
 
+sameric: { `$@[string x;til 6]};
+
+enrichsym: {[x]  x: string x; `$ $[x[0]="6"; x,".SS"; x,".SZ"]};
+
+getdata:{[datax]
+      o1: datax[0]; o2: datax[1];       e1: datax[2];       extrao: datax[6];       hpro: datax[7];       hpre: datax[8];
+      hpro2:();
+      hpre2:();
+      allsym: distinct  (distinct o1`RIC),   (distinct hpro`RIC);
+      err:0;
+      if[12 < count datax;
+      hpre2: datax[12];
+      hprrmap: select last RIC by OrderId from datax[11] where not null RIC;
+      hpro2: datax[11] lj  hprrmap;
+      hprrmap: select RIC:`RejectedSym by OrderId from hpro2 where event = `Rejected;
+      hpro2: select time, Account, RIC, event: ?[event=`Accepted;`Pending;`PendingCancel], Price, Side, Quantity, OrderId from hpro2 where event in `Accepted`CancelAccepted;
+      err: exec count i from hpro2 where null RIC;
+      allsym: distinct allsym, (distinct hpro2`RIC);];
+
+      mapd: {x ! sameric each x} allsym;
+      o1: update sym: mapd RIC, Side: ?[Side="1";`b;`s] from o1;
+      hpro: update sym:mapd RIC, Side: ?[Side="1";`b;`s] from hpro;
+      hpre: hpre lj `OrderId xkey select OrderId, Account, Account, Side, sym from hpro;
+      $[12<count datax;
+        [hpro2: update sym: mapd RIC, Side: ?[Side="1";`b;`s] from hpro2;
+         hpre2: update sym: mapd RIC, Side: ?[Side="1";`b;`s] from hpre2];
+        [hpro2:0#hpro; hpre2:0#hpre]];
+      r1: select OrderId, RootId: OrderId, nextParent: -1 , level:0 from o1;
+     r2: select OrderId, RootId: OrderId, nextParent: ParentId, level:1 from o2;
+     parentrela: (exec OrderId!ParentId from o1), (exec OrderId!ParentId from o2);
+     while[ not 0 = exec sum nextParent <> -1 from r2 ;
+     r2: update RootId: parentrela RootId, nextParent: parentrela nextParent,level: level + 1 from r2 where not nextParent = -1];
+     o2: o2 lj `OrderId xkey select OrderId, RootId, level from r2;
+     o2: o2 lj `RootId xkey select RootId:OrderId, sym, Side, StratType, Account from o1;
+     e1: e1 lj `OrderId xkey select sym, Account , Side, StratType, RootId, OrderId from o2;
+     e1: e1 lj `OrderId xkey select sym, Account , Side, StratType, RootId:OrderId, OrderId from o1;
+    :(o1;o2;e1;hpro;hpre;hpro2;hpre2;err);
+  };
+
+
 getx2:{[x]
 e1: () xkey select Qty:sum Quantity, Notion: sum Quantity*Price by date:`date$time ,Account,sym, Side from x[4];
 e2: () xkey select Qty:sum Quantity, Notion: sum Quantity*Price by date:`date$time, Account,sym, Side from x[2];
@@ -38,7 +78,8 @@ if[0<count x[6]; e3:  () xkey select Qty:sum Quantity, Notion: sum Quantity*Pric
 getvwap:{[x2]
     allrics: exec distinct sym from x2;
     d: exec last date from x2;
-    // query vwap
+    vwap: hk (`.ceq.vwap; enrichsym each allrics;d;0t;d;24t;``source!``denali);
+    :vwap
 };
 
 
@@ -82,8 +123,8 @@ getextrasig1:{[xx;vwap;Qt]
   xx[2]: update date:d from xx[2];  
   xx[4]: update date:d from xx[4];
   xx[6]: update date:d from xx[6];
-  st1: ((select symbol:sym, Price, Quantity,Account from (xx[2] lj `date`Account xkey update QClient:1b from Qt) where QClient , Side = `b), $[0<count xx[4];(select symbol:sym, Price, Quantity,Account from (xx[4] lj `date`Account xkey update QClient:1b from Qt) where QClient , Side = `b);()], $[0<count xx[6];(select symbol:sym, Price, Quantity,Account from (xx[6] lj `date`Account xkey update QClient:1b from Qt) where QClient,  Side = `b);()]) lj `symbol xkey vwap;
-  st2: ((select symbol:sym, Price, Quantity,Account from (xx[2] lj `date`Account xkey update QClient:1b from Qt) where QClient , Side = `s), $[0<count xx[4];(select symbol:sym, Price, Quantity,Account from (xx[4] lj `date`Account xkey update QClient:1b from Qt) where QClient , Side = `s);()], $[0<count xx[6];(select symbol:sym, Price, Quantity,Account from (xx[6] lj `date`Account xkey update QClient:1b from Qt) where QClient , Side = `s);()]) lj `symbol xkey vwap;
+  st1: ((select symbol:sym, Price, Quantity,Account from (xx[2] lj `date`Account xkey update QClient:1b from Qt) where QClient , Side = `b), $[0<count xx[4];(select symbol:sym, Price, Quantity,Account from (xx[4] lj `date`Account xkey update QClient:1b from Qt) where QClient , Side = `b);()], $[0<count xx[6];(select symbol:sym, Price, Quantity,Account from (xx[6] lj `date`Account xkey update QClient:1b from Qt) where QClient,  Side = `b);()]) lj `symbol`date xkey vwap;
+  st2: ((select symbol:sym, Price, Quantity,Account from (xx[2] lj `date`Account xkey update QClient:1b from Qt) where QClient , Side = `s), $[0<count xx[4];(select symbol:sym, Price, Quantity,Account from (xx[4] lj `date`Account xkey update QClient:1b from Qt) where QClient , Side = `s);()], $[0<count xx[6];(select symbol:sym, Price, Quantity,Account from (xx[6] lj `date`Account xkey update QClient:1b from Qt) where QClient , Side = `s);()]) lj `symbol`date xkey vwap;
   x1: (select cb:count i, bn: sum Quantity, cbl: sum Price > vwap, bln: sum Quantity where Price >vwap by symbol from st1);
   x2: (select cs:count i, sn: sum Quantity, csl: sum Price < vwap, sln: sum Quantity  where Price <vwap by symbol from st2);
   :update date:d from (([] symbol:allsym) lj x1) lj x2};
@@ -94,7 +135,7 @@ workinngond: {[d; path; justcache; cachefull]
 0N!"working on", string d;
 cnoutput:  getdata[d;`CNY`CNH;1b;`marketHK];
 $[ 0 = count cnoutput[2]; [0N!"no filling for this day, skip"; :()];];
-x2:getx2[cnoutput];
+x2:getx2[getdata[cnoutput]];
 vwap: getvwap[x2];
 acmap: getlatestacmap[];
 lastacmap: getlastcachedacmap[path];
