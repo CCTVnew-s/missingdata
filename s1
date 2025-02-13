@@ -1,0 +1,145 @@
+// passcode to swich
+khstring1: `$":eqkrtkyp1.wproxy.swissbank.com:15040:sso_quad:yB7HJ63eNam85u#Px_Vg"; 
+hk:hopen khstring1;
+.z.zd: 17 2 6;
+
+
+getdata: {[d;ccy;includehpr;source]
+s1:  hk (`.noms.getOrders; d; 0t; d; 24t; `streams`filters`columns`tz!(source;"event in `Pending`PendingReplace`PendingCancel ,Currency in ",  "",/  "`" ,/: string each ccy; `date`time`Account`RIC`event`Price`Side`Quantity`Exchange`OrderId`ParentId`Destination`VirtualDestination`StratType`strategyParameterDict`OrigGroup;`local));
+s2:  hk (`.noms.getExecutions; d; 0t; d; 24t; `streams`filters`columns`tz!(source;"ChildMatchId = -1,Currency in ",  "",/  "`" ,/: string each ccy ;`date`time`event`Account`RIC`Price`event`Side`Quantity`Exchange`OrderId`Destination;`local));
+stratextra: select from s1 where VirtualDestination = `STRAT, null StratType, event = `Pending;
+s1x: delete date, strategyParameterDict from  select from s1 where ParentId = -1;
+s1y: select time,event,Price,Quantity,OrderId,ParentId,VirtualDestination,StratType from s1 where not ParentId = -1;
+s2x: select time, event,OrderId, Price, Quantity, Destination from s2;
+$[includehpr;
+[
+s12:  hk (`.noms.getOrders; d; 0t; d; 24t; `streams`filters`columns`tz!(`hprApac;" sourceTable in `kodacFix.hprApac.NewOrderSingle`kodacFix.hprApac.OrderCancelRequest`kodacFix.hprApac.ExecutionReport, event in `Pending`PendingReplace`PendingCancel, Currency in ",  "",/  "`" ,/: string each ccy ;`date`time`Account`RIC`event`Price`Side`Quantity`Exchange`OrderId`Destination`StratType`sourceTable;`local));
+s12x: select time, Account, RIC, event, Price,Side,Quantity,OrderId from s12 where sourceTable = `kodacFix.hprApac.ExecutionReport;
+s12y: select time, Account, RIC, event, Price,Side,Quantity,OrderId from s12 where not OrderId in exec distinct OrderId from s12x;
+s12yextra: hk (`.noms.getOrders; d; 0t; d; 24t; `streams`filters`columns`tz!(`hprApac;enlist (in ;`OrderId; distinct s12y`OrderId);`date`time`Account`RIC`event`Price`Side`Quantity`Exchange`OrderId`Destination`StratType;`local));
+s12y: s12y lj select last event, last RIC by OrderId from s12yextra where not null RIC;
+s22: hk (`.noms.getExecutions; d; 0t; d; 24t; `streams`filters`columns`tz!(`hprApac ;" Currency in ",  "",/  "`" ,/: string each ccy ;`date`time`Account`RIC`Price`Side`Quantity`Exchange`OrderId`Destination;`local));
+s22zip: select time, Price, Quantity, OrderId from s22;
+
+s13: hk (`.noms.getOrders; d; 0t; d; 24t; `streams`filters`columns`tz!(`hprApacCN;"" ;`date`time`Account`RIC`event`Price`Side`Quantity`OrderId`sourceTable;`local));
+s23: hk (`.noms.getExecutions; d; 0t; d; 24t; `streams`filters`columns`tz!(`hprApacCN ;"" ;`date`time`Account`RIC`Price`Side`Quantity`OrderId;`local));
+
+:(s1x;s1y;s2x;count s1x;count s1y;count s2x; stratextra; s12x,s12y;s22zip; count  s12x,s12y; count s22; s13;s23 )];
+:(s1x;s1y;s2x;count s1x;count s1y;count s2x; stratextra)]};
+
+
+getx2:{[x]
+e1: () xkey select Qty:sum Quantity, Notion: sum Quantity*Price by date:`date$time ,Account,sym, Side from x[4];
+e2: () xkey select Qty:sum Quantity, Notion: sum Quantity*Price by date:`date$time, Account,sym, Side from x[2];
+e3:();
+if[0<count x[6]; e3:  () xkey select Qty:sum Quantity, Notion: sum Quantity*Price by date:`date$time, Account,sym, Side from x[6]];
+:e1,e2,e3};
+
+getvwap:{[x2]
+    allrics: exec distinct sym from x2;
+    d: exec last date from x2;
+    // query vwap
+};
+
+
+summaryQ: {[datetable;xd;] 
+    sd: exec last 20 # reverse asc date from datetable where date <= xd;
+    stas1: select sum Notion, count distinct sym, allsym: distinct sym by date, Account  from X2 where date within(sd;xd);
+    stats2: select trdds:count date, trdsym: avg sym, avg Notion, count distinct {() ,/ x} allsym  by Account from stas1;
+    :(() xkey update date:xd from stats2 lj acmap)};
+
+
+getlatestacmap:{[]
+ ac1: ?[`Account`ClientName xcol hk (`.kodacSapphire.getTable; `UpdateClientInfo; .z.d - 1 ; 0t; 24t; `clientAsia;`columns`filters!(`ClientId`ClientName;`)); ();(enlist `Account)!enlist `Account;(enlist `clientName)!enlist (first;`ClientName)];
+ ac2: ?[`Account`ClientName xcol hk (`.kodacSapphire.getTable; `UpdateClientInfo; .z.d - 4 ; 0t; 24t; `clientAsia;`columns`filters!(`ClientId`ClientName;`)); ();(enlist `Account)!enlist `Account;(enlist `clientName)!enlist (first;`ClientName)];
+ :acmap:select last clientName by Account from (ac1,ac2) where not null clientName;
+};
+
+getlastcachedacmap:{[path]
+ objs:system "ls ",path;
+ acmapobj: objs where objs like "acmapobj*";
+ if[0 = count acmapobj;:([Account:()]; clientName:())];
+ :get `$ raze ":",path,"/",last acmapobj iasc {"D"$8 _ x} each acmapobj
+};
+
+
+
+getQtd:{[path;d;acmap]
+ objs:system "ls ",path;
+ x2obj: objs where objs like "X2obj*";
+ x2: (),/ {[path;f] get `$":",path,"/",f}[path;] each x2obj;
+ datetable: select sum Notion, count distinct Account by date from X2;
+ datetable: select from datetable where Notion >= 1e9;
+ sd: exec last 20 # reverse asc date from datetable where date <= d;
+ stas1: select sum Notion, count distinct sym, allsym: distinct sym by date, Account  from X2 where date within(sd;d);
+ stats2: select trdds:count date, trdsym: avg sym, avg Notion, count distinct {() ,/ x} allsym  by Account from stas1;
+ dailyQ:(() xkey update date:d from stats2 lj acmap);
+ Qt: select date, Account, clientName from dailyQ where trdds>=18, trdsym>=100, allsym>=800, not Account = `C12314;
+ :Qt};
+
+getextrasig1:{[xx;vwap;Qt]
+  d: `date$first xx[2]`time;
+  xx[2]: update date:d from xx[2];  
+  xx[4]: update date:d from xx[4];
+  xx[6]: update date:d from xx[6];
+  st1: ((select symbol:sym, Price, Quantity,Account from (xx[2] lj `date`Account xkey update QClient:1b from Qt) where QClient , Side = `b), $[0<count xx[4];(select symbol:sym, Price, Quantity,Account from (xx[4] lj `date`Account xkey update QClient:1b from Qt) where QClient , Side = `b);()], $[0<count xx[6];(select symbol:sym, Price, Quantity,Account from (xx[6] lj `date`Account xkey update QClient:1b from Qt) where QClient,  Side = `b);()]) lj `symbol xkey vwap;
+  st2: ((select symbol:sym, Price, Quantity,Account from (xx[2] lj `date`Account xkey update QClient:1b from Qt) where QClient , Side = `s), $[0<count xx[4];(select symbol:sym, Price, Quantity,Account from (xx[4] lj `date`Account xkey update QClient:1b from Qt) where QClient , Side = `s);()], $[0<count xx[6];(select symbol:sym, Price, Quantity,Account from (xx[6] lj `date`Account xkey update QClient:1b from Qt) where QClient , Side = `s);()]) lj `symbol xkey vwap;
+  x1: (select cb:count i, bn: sum Quantity, cbl: sum Price > vwap, bln: sum Quantity where Price >vwap by symbol from st1);
+  x2: (select cs:count i, sn: sum Quantity, csl: sum Price < vwap, sln: sum Quantity  where Price <vwap by symbol from st2);
+  :update date:d from (([] symbol:allsym) lj x1) lj x2};
+
+
+
+workinngond: {[d; path; justcache; cachefull]
+0N!"working on", string d;
+cnoutput:  getdata[d;`CNY`CNH;1b;`marketHK];
+$[ 0 = count cnoutput[2]; [0N!"no filling for this day, skip"; :()];];
+x2:getx2[cnoutput];
+vwap: getvwap[x2];
+acmap: getlatestacmap[];
+lastacmap: getlastcachedacmap[path];
+lastmap: 
+if[cachefull;(`$raze ":", (string path) ,"fullobj",ssr[string d;".";""]) set cnoutput];
+(`$raze ":", (string path) ,"X2obj",ssr[string d;".";""]) set x2;
+(`$raze ":", (string path) ,"vwapobj",ssr[string d;".";""]) set vwap;
+(`$raze ":", (string path) ,"acmapobj",ssr[string d;".";""]) set acmap;
+if[justcache;system "sleep 1";:()];
+//
+Qt: getQtd[path;d];
+xn44: getextrasig1[cnoutput;vwap;Qt];
+newac: (select distinct Account from X2 where Account not in (() xkey lastacmap)`Account;
+newacn: select from acmap where Account in newac;
+tgtobj: (x2;vwap;Qt;xn44;newacn);
+// zip and translate
+namestring: "binarylog",ssr[string d;".";""];
+(`$":binarylog",ssr[string d;".";""]) set tgtobj;
+system "zip x", namestring , ".zip " , namestring , "*";
+system "mv x" ,  namestring , ".zip ", path,"/";
+system "rm ./binarylog",ssr[string d;".";""],"*";
+// translate
+system "mkdir -p ./binarylog";
+system "python ./testrun.py ", path,"/x", namestring , ".zip "," 450x250 ",ssr[string d;".";""]," binarylog";
+system "rm ",path,"/x", namestring , ".zip ";
+};
+
+getbytesn:{[]
+    fs: system "ls ./binarylog";
+    :count fs;
+ };
+ 
+getbytesarrayI:{[i]
+ fs: system "ls ./binarylog";
+ fs: fs iasc { "I" $ first "." vs last "-" vs x} each fs;
+ rb: {read1 `$raze ":./binarylog/",x}fs[i]};
+ 
+cleanbytes:{[]
+  system "rm ./binarylog/*";};
+// usage 1. just today 2. caching previous; 3 just certain day; 4 day with previous x
+cachedaywithpreviousx:{[d;path;x]
+    workinngond[;path;1b;0b] each reverse (d - 1) - til x;
+};
+cacheprevousandreturnthisday:{[d;path;x; cachefullthisday]
+    cachedaywithpreviousx[d;path;x]
+    workinngond[d;path;1b;cachefullthisday];
+}; 
+// common usage  workinngond[.z.d;path;0b;1b] or  workinngond[.z.d;path;0b;1b]
